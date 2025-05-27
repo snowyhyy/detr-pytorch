@@ -140,6 +140,66 @@ class SetCriterion(nn.Module):
         losses = {'cardinality_error': card_err}
         return losses
 
+    def loss_boxes(self, outputs, targets, indices, num_boxes):
+        """
+        计算与边界框、L1回归损失和GIoU损失相关的损失时，
+        目标字典必须包含 "boxes" 键，该键包含维度为 [nb_target_boxes, 4] 的张量
+        目标边界框的格式为 (cx, cy, w, h)，根据图像大小进行归一化。
+        """
+        assert 'pred_boxes' in outputs
+        idx = self._get_src_permutation_idx(indices)
+        src_boxes = outputs['pred_boxes'][idx]
+        target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+
+        loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
+
+        losses = {}
+        losses['loss_bbox'] = loss_bbox.sum() / num_boxes
+
+        loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
+            box_ops.box_cxcywh_to_xyxy(src_boxes),
+            box_ops.box_cxcywh_to_xyxy(target_boxes)
+        ))
+        losses['loss_giou'] = loss_giou.sum() / num_boxes
+        return losses
+    
+    def loss_masks(self, outputs, targets, indices, num_boxes):
+        """
+        计算与分割损失相关的损失时（焦点损失和Dice损失），
+        目标字典必须包含 "masks" 键，该键包含维度为 [nb_target_boxes, h, w] 的张量
+        """
+        assert "pred_masks" in outputs
+
+        src_idx = self._get_src_permutation_idx(indices) # 预测框匹配索引
+        tgt_idx = self._get_tgt_permutation_idx(indices) # 真实框匹配索引
+        src_masks = outputs["pred_masks"]
+        src_masks = src_masks[src_idx]
+        masks = [t["masks"] for t in targets]
+        # TODO use valid to mask invalid areas due to padding in loss
+        target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
+        target_masks = target_masks.to(src_masks)
+        target_masks = target_masks[tgt_idx]
+
+        # 上采样预测值到目标尺寸
+        src_masks = interpolate(src_masks[:, None],
+                                size=target_masks.shape[-2:],
+                                mode="bilinear",
+                                align_corners=False)
+        src_masks = src_masks[:, 0].flatten(1)
+
+        target_masks = target_masks.flatten(1)
+        target_masks = target_masks.view(src_masks.shape)
+        losses = {
+            "loss_mask": sigmoid_focal_loss(src_masks, target_masks, num_boxes),
+            "loss_dice": dice_loss(src_masks, target_masks, num_boxes),
+        }
+        return losses
+    
+    
+
+
+
+
 
 
 
