@@ -1,4 +1,12 @@
-
+'''
+Author: snowy
+Email: 1447048804@qq.com
+Date: 2025-06-05 09:27:13
+Version: 0.0.1
+LastEditors: snowy 1447048804@qq.com
+LastEditTime: 2025-06-05 15:14:37
+Description: 根据官方的实现，添加中文注释，源码：https://github.com/facebookresearch/detr.git
+'''
 """
 
 """
